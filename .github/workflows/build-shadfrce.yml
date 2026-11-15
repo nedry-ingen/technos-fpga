@@ -54,8 +54,9 @@ jobs:
 
       - name: Compile (Quartus in jotego/jtcore20)
         run: |
-          docker run --rm --network host -v "$(pwd)/jtcores":/jtcores jotego/jtcore20 \
-            bash /jtcores/build-in-docker.sh "$CORE" mister
+          docker run --rm --network host --entrypoint /bin/bash \
+            -v "$(pwd)/jtcores":/jtcores jotego/jtcore20 \
+            /jtcores/build-in-docker.sh "$CORE" mister
 
       - name: Collect the .rbf
         id: rbf
