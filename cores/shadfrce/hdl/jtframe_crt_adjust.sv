@@ -30,6 +30,12 @@
       outputs, including the last active one.
 
     * H-Position is entered in 2-pixel steps (OSD string length limit).
+
+    * Frame position. Shadow Force has a 64-pixel back porch and a 32-pixel
+      front porch, so on a CRT the whole picture sits to the right. st_frame
+      delays the native HSync by up to 48 pixels (or advances it by up to 12)
+      before anything else, so the whole frame moves, with CRT Adjust On or
+      Off. 4-pixel steps: 0..12 = 0,-4..-48 px (left), 13..15 = +12,+8,+4 px.
 */
 
 module jtframe_crt_adjust #(parameter
@@ -45,11 +51,12 @@ module jtframe_crt_adjust #(parameter
     input      [4:0] st_hsize,      // signed, -16..+15
     input      [5:0] st_hpos,       // 0..24 = +0..+48 px, 25..48 = -48..-2 px
     input      [4:0] st_vshift,     // signed, -16..+15 lines
+    input      [3:0] st_frame,      // whole-frame H position, see above
     input            scandoubler,   // the module only works at the native rate
     // native video (arcade_video output)
     input            ce_in,
     input      [7:0] r_in, g_in, b_in,
-    input            hs_in, vs_in, de_in,
+    input            hs_raw, vs_in, de_in,
     // adjusted video
     output           ce_out,
     output     [7:0] r_out, g_out, b_out,
@@ -71,6 +78,19 @@ always @(posedge clk) if( ce_in ) begin
     hpos_d   <= st_hpos;
     hpos_off <= hpos_d <= 6'd24 ? $signed( { 2'd0, hpos_d, 1'b0 } )
                                 : $signed( { 2'd0, hpos_d, 1'b0 } ) - 9'sd98;
+end
+
+// ─── Frame position: HSync delayed by frame_dly native pixels ────────────────
+reg  [3:0]        frame_d;
+reg  [9:0]        frame_dly = 0;
+reg  [HTOTAL-1:0] hs_sr = 0;
+wire              hs_in = frame_dly==0 ? hs_raw : hs_sr[frame_dly-10'd1];
+
+always @(posedge clk) if( ce_in ) begin
+    frame_d   <= st_frame;
+    frame_dly <= frame_d <= 4'd12 ? { 4'd0, frame_d, 2'd0 }                  // 0..48 px later
+                                  : 10'(HTOTAL) - { 4'd0, 5'd16-{1'b0,frame_d}, 2'd0 }; // 12,8,4 px earlier
+    hs_sr     <= { hs_sr[HTOTAL-2:0], hs_raw };
 end
 
 // ─── Read clock-enable, reset on hs_ref_out ─────────────────────────────────
