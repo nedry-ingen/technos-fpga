@@ -1,15 +1,16 @@
 diff --git a/modules/jtframe/target/mister/cfgstr b/modules/jtframe/target/mister/cfgstr
-index f6ba6de..409e157 100644
+index f6ba6de..4ac1802 100644
 --- a/modules/jtframe/target/mister/cfgstr
 +++ b/modules/jtframe/target/mister/cfgstr
-@@ -6,10 +6,17 @@
+@@ -6,10 +6,18 @@
  {{ if not (.JTFRAME_NOMRA_DIP) }}   DIP;                      {{ end }}
  {{ if .JTFRAME_CHEAT }}             CHEAT;                    {{ end }}
      P1,Video;
 +{{ if .JTFRAME_CRT_ADJUST }}
++    P1O[73:70],CRT Frame H,0,-4,-8,-12,-16,-20,-24,-28,-32,-36,-40,-44,-48,+12,+8,+4;
 +    P1O[101],CRT Adjust,Off,On;
 +    H9P1O[100:96],CRT H-Size,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;
-+    H9P1O[84:79],CRT H-Position,0,+2,+4,+6,+8,+10,+12,+14,+16,+18,+20,+22,+24,+26,+28,+30,+32,+34,+36,+38,+40,+42,+44,+46,+48,-48,-46,-44,-42,-40,-38,-36,-34,-32,-30,-28,-26,-24,-22,-20,-18,-16,-14,-12,-10,-8,-6,-4,-2;
++    H9P1O[84:79],CRT H-Pos,0,+2,+4,+6,+8,+10,+12,+14,+16,+18,+20,+22,+24,+26,+28,+30,+32,+34,+36,+38,+40,+42,+44,+46,+48,-48,-46,-44,-42,-40,-38,-36,-34,-32,-30,-28,-26,-24,-22,-20,-18,-16,-14,-12,-10,-8,-6,-4,-2;
 +    H9P1O[78:74],CRT V-Shift,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;
 +{{ else }}
      P1oLO,CRT H offset,0,+1,+2,+3,+4,+5,+6,+7,-8,-7,-6,-5,-4,-3,-2,-1;
@@ -21,7 +22,7 @@ index f6ba6de..409e157 100644
      H7P1O[65:64],CRT deflicker,Off,Low,Mid,High;
      H7P1O[69:67],CRT height,224,232,240,1:1,200,208,216;
 diff --git a/modules/jtframe/target/mister/hdl/jtframe_mister.sv b/modules/jtframe/target/mister/hdl/jtframe_mister.sv
-index 9cd9143..4eba6c5 100644
+index 9cd9143..85cca1b 100644
 --- a/modules/jtframe/target/mister/hdl/jtframe_mister.sv
 +++ b/modules/jtframe/target/mister/hdl/jtframe_mister.sv
 @@ -2,6 +2,16 @@
@@ -47,7 +48,7 @@ index 9cd9143..4eba6c5 100644
  
 +`ifdef JTFRAME_MR_STATUS128
 +// CRT filter: 65:64; height: 69:67; bit 66 is free
-+// CRT Adjust: 101 on/off, 100:96 H-Size, 84:79 H-Position, 78:74 V-Shift
++// CRT Adjust: 101 on/off, 100:96 H-Size, 84:79 H-Position, 78:74 V-Shift, 73:70 frame position
 +wire [127:0] status_full;
 +assign status = status_full[63:0];
 +`endif
@@ -111,7 +112,7 @@ index 9cd9143..4eba6c5 100644
      .VGA_SL     ( scan2x_sl     ),
  
      .gamma_bus  ( gamma_bus     ),
-@@ -723,6 +751,57 @@ u_arcade_video(
+@@ -723,6 +751,58 @@ u_arcade_video(
  `endif
  );
  
@@ -148,12 +149,13 @@ index 9cd9143..4eba6c5 100644
 +    .st_hsize   ( status_full[100:96]   ),
 +    .st_hpos    ( status_full[84:79]    ),
 +    .st_vshift  ( status_full[78:74]    ),
++    .st_frame   ( status_full[73:70]    ),
 +    .scandoubler( force_scan2x          ),
 +    .ce_in      ( av_cen                ),
 +    .r_in       ( av_r                  ),
 +    .g_in       ( av_g                  ),
 +    .b_in       ( av_b                  ),
-+    .hs_in      ( av_hs                 ),
++    .hs_raw     ( av_hs                 ),
 +    .vs_in      ( av_vs                 ),
 +    .de_in      ( av_de                 ),
 +    .ce_out     ( scan2x_cen            ),
