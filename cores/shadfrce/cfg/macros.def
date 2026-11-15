@@ -19,6 +19,16 @@ OBJ4_START=0x4B0000
 JTFRAME_BA3_START=0x6B0000
 
 [mister]
+# CRT Adjust (https://github.com/rmonic79/MiSTer-CRT-Adjust): analog H-Size,
+# H-Position and V-Shift from the OSD. Needs jtframe-patches/crt_adjust.patch
+JTFRAME_CRT_ADJUST
+JTFRAME_CRT_ADJUST_HTOTAL=448
+JTFRAME_CRT_ADJUST_VTOTAL=272
+# H-Position mechanism: 1 = content shift (320 px active on a 448 px line)
+JTFRAME_CRT_ADJUST_HPOS=1
+# read period = (BASE+H-Size)/INC clocks; 48 MHz / 7 MHz = 48/7
+JTFRAME_CRT_ADJUST_INC=7
+JTFRAME_CRT_ADJUST_BASE=48
 JTFRAME_ARX=4
 JTFRAME_ARY=3
 JTFRAME_OSD_NOLOGO

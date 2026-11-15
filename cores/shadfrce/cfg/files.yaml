@@ -1,6 +1,8 @@
 shadfrce:
   - get:
     - "*.v"
+    - crt_adjust.sv          # rmonic79/MiSTer-CRT-Adjust (MiSTer only, see JTFRAME_CRT_ADJUST)
+    - jtframe_crt_adjust.sv  # JTFRAME glue for crt_adjust.sv
 jtframe:
   - get:
     - jtframe_edge.v
