@@ -28,9 +28,13 @@ untouched native signal. While it is On, HDMI follows the adjustment too
 offset" and "CRT scale" options are not shown, so the two methods can't fight
 each other and the OSD string stays under 1024 bytes.
 
-Note: enlarging the picture (H-Size > 0) also pushes it to the right. Use a
-negative H-Position to bring it back to the center, otherwise the right edge gets
-clipped at the end of the line (there are only 32 px of front porch).
+H-Size scales the picture around its own center: the glue measures the native
+active center and shifts the scaled content by -c·hsize/(48+hsize) read pixels,
+so shrinking no longer drags the left edge into the back porch/HSync retrace
+(which made the picture look split on a CRT) and enlarging no longer pushes the
+right edge off the end of the line. H-Position and CRT Frame H then move the
+centred picture. DE follows the scaled picture, so MiSTer's analog output (which
+blanks RGB outside DE) shows all of it.
 
 ## Files
 
@@ -64,6 +68,7 @@ An Icarus Verilog testbench using Shadow Force's timing (448×272, 7 MHz pixel
 from a 48 MHz clock) checked that, with CRT Adjust On:
 - all 240 active lines (8…247) come out with 320 pixels each, and every pixel matches the source;
 - H-Size +4 makes the active line 8.3 % wider (4/48);
+- H-Size -16…+15 keeps the picture centered on the native active center, with all 320 pixels inside DE;
 - H-Position +20 moves it right by exactly 20 pixel periods;
 - V-Shift +5 delays VSync by 5 lines;
 - DE for the OSD is present on exactly 240 lines.
