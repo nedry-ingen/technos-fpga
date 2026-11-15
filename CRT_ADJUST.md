@@ -8,10 +8,18 @@ resize and move the analog (15 kHz) picture from the OSD so it fits your CRT.
 
 | Option | Range | Status bits |
 |---|---|---|
+| CRT Frame H | 0, -4 … -48 px (left), +12, +8, +4 px (right). Works with CRT Adjust On or Off | 73:70 |
 | CRT Adjust | Off / On | 101 |
 | CRT H-Size | -16 … +15 (each step ≈ 2.1 %) | 100:96 |
-| CRT H-Position | -48 … +48 px, 2 px steps | 84:79 |
+| CRT H-Pos | -48 … +48 px, 2 px steps | 84:79 |
 | CRT V-Shift | -16 … +15 lines | 78:74 |
+
+**CRT Frame H** moves the whole frame, not just the picture inside it. Shadow
+Force's native timing has a 64-pixel back porch and only a 32-pixel front porch,
+so on a CRT the whole frame sits right of center. This option delays (or
+advances) the HSync itself, so the frame, the picture and the OSD all move
+together. Around -24 should be close to center on a typical 15 kHz
+monitor. Fine-tune with CRT H-Pos if needed.
 
 The amounts only show when CRT Adjust is On. With it Off the video is the
 untouched native signal. While it is On, HDMI follows the adjustment too
