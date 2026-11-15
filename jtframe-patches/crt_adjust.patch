@@ -1,0 +1,171 @@
+diff --git a/modules/jtframe/target/mister/cfgstr b/modules/jtframe/target/mister/cfgstr
+index f6ba6de..409e157 100644
+--- a/modules/jtframe/target/mister/cfgstr
++++ b/modules/jtframe/target/mister/cfgstr
+@@ -6,10 +6,17 @@
+ {{ if not (.JTFRAME_NOMRA_DIP) }}   DIP;                      {{ end }}
+ {{ if .JTFRAME_CHEAT }}             CHEAT;                    {{ end }}
+     P1,Video;
++{{ if .JTFRAME_CRT_ADJUST }}
++    P1O[101],CRT Adjust,Off,On;
++    H9P1O[100:96],CRT H-Size,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;
++    H9P1O[84:79],CRT H-Position,0,+2,+4,+6,+8,+10,+12,+14,+16,+18,+20,+22,+24,+26,+28,+30,+32,+34,+36,+38,+40,+42,+44,+46,+48,-48,-46,-44,-42,-40,-38,-36,-34,-32,-30,-28,-26,-24,-22,-20,-18,-16,-14,-12,-10,-8,-6,-4,-2;
++    H9P1O[78:74],CRT V-Shift,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;
++{{ else }}
+     P1oLO,CRT H offset,0,+1,+2,+3,+4,+5,+6,+7,-8,-7,-6,-5,-4,-3,-2,-1;
+     P1oPS,CRT V offset,0,+1,+2,+3,+4,+5,+6,+7,-8,-7,-6,-5,-4,-3,-2,-1;
+     P1oG,CRT scale enable,Off,On;
+     H2P1oHK,CRT scale factor,+1,+2,+3,+4,+5,+6,+7,+8,-8,-7,-6,-5,-4,-3,-2,-1;
++{{ end }}
+ {{ if .JTFRAME_CRT480I }}
+     H7P1O[65:64],CRT deflicker,Off,Low,Mid,High;
+     H7P1O[69:67],CRT height,224,232,240,1:1,200,208,216;
+diff --git a/modules/jtframe/target/mister/hdl/jtframe_mister.sv b/modules/jtframe/target/mister/hdl/jtframe_mister.sv
+index 9cd9143..4eba6c5 100644
+--- a/modules/jtframe/target/mister/hdl/jtframe_mister.sv
++++ b/modules/jtframe/target/mister/hdl/jtframe_mister.sv
+@@ -2,6 +2,16 @@
+  * SPDX-License-Identifier: GPL-3.0-or-later
+  * Date: 7-3-2019 */
+ 
++// CRT Adjust (rmonic79/MiSTer-CRT-Adjust) needs the 128-bit status word
++`ifdef JTFRAME_CRT480I
++    `define JTFRAME_MR_STATUS128
++`endif
++`ifdef JTFRAME_CRT_ADJUST
++    `ifndef JTFRAME_MR_STATUS128
++        `define JTFRAME_MR_STATUS128
++    `endif
++`endif
++
+ module jtframe_mister #(parameter
+     BUTTONS                 = 2,
+     GAME_INPUTS_ACTIVE_LOW  =1'b1,
+@@ -407,12 +417,24 @@ jtframe_resync u_resync(
+ 
+ reg         framebuf_flip;      // extra OSD options for rotation, bit 0 = rotate, bit 1 = flip
+ 
++`ifdef JTFRAME_MR_STATUS128
++// CRT filter: 65:64; height: 69:67; bit 66 is free
++// CRT Adjust: 101 on/off, 100:96 H-Size, 84:79 H-Position, 78:74 V-Shift
++wire [127:0] status_full;
++assign status = status_full[63:0];
++`endif
++
+ // OSD option visibility. This is linked to the d(D) and h(H) prefixes in cfgstr
+ wire [15:0] status_menumask; // a high value hides the menu item
+ wire        vertical, db15_osd_combo_en;
+ 
+ assign db15_osd_combo_en = ~status[61];
+-assign status_menumask[15:9] = 0,
++assign status_menumask[15:10] = 0,
++`ifdef JTFRAME_CRT_ADJUST
++       status_menumask[9]    = ~status_full[101], // CRT Adjust amounts, shown when On
++`else
++       status_menumask[9]    = 0,
++`endif
+        status_menumask[8]    = ~(db15_en | uart_en),
+ `ifdef JTFRAME_CRT480I
+        status_menumask[7]    = ~crt_on, // extra CRT height/filter options in the Video page
+@@ -536,10 +558,6 @@ assign joystick2 = joyusb_2;
+     assign hps_din = ioctl_din;
+ `endif
+ 
+-`ifdef JTFRAME_CRT480I
+-wire [127:0] status_full;   // CRT filter: 65:64; height: 69:67; bit 66 is free
+-assign status = status_full[63:0];
+-`endif
+ 
+ hps_io #(
+     .STRLEN(1024),
+@@ -550,7 +568,7 @@ hps_io #(
+     .HPS_BUS         ( HPS_BUS        ),
+ 
+     .buttons         ( buttons        ),
+-`ifdef JTFRAME_CRT480I
++`ifdef JTFRAME_MR_STATUS128
+     .status          ( status_full    ),
+ `else
+     .status          ( status         ),
+@@ -705,6 +723,15 @@ u_arcade_video(
+     .VSync      ( hsize_vs      ),
+ 
+     .CLK_VIDEO  ( scan2x_clk    ),
++`ifdef JTFRAME_CRT_ADJUST
++    .CE_PIXEL   ( av_cen        ),
++    .VGA_R      ( av_r          ),
++    .VGA_G      ( av_g          ),
++    .VGA_B      ( av_b          ),
++    .VGA_HS     ( av_hs         ),
++    .VGA_VS     ( av_vs         ),
++    .VGA_DE     ( av_de         ),
++`else
+     .CE_PIXEL   ( scan2x_cen    ),
+     .VGA_R      ( scan2x_r      ),
+     .VGA_G      ( scan2x_g      ),
+@@ -712,6 +739,7 @@ u_arcade_video(
+     .VGA_HS     ( scan2x_hs     ),
+     .VGA_VS     ( scan2x_vs     ),
+     .VGA_DE     ( raw_de        ),
++`endif
+     .VGA_SL     ( scan2x_sl     ),
+ 
+     .gamma_bus  ( gamma_bus     ),
+@@ -723,6 +751,57 @@ u_arcade_video(
+ `endif
+ );
+ 
++`ifdef JTFRAME_CRT_ADJUST
++// CRT Adjust: analog H-Size / H-Position / V-Shift, by rmonic79
++// https://github.com/rmonic79/MiSTer-CRT-Adjust
++`ifndef JTFRAME_CRT_ADJUST_HTOTAL
++    `define JTFRAME_CRT_ADJUST_HTOTAL 448
++`endif
++`ifndef JTFRAME_CRT_ADJUST_VTOTAL
++    `define JTFRAME_CRT_ADJUST_VTOTAL 272
++`endif
++`ifndef JTFRAME_CRT_ADJUST_HPOS
++    `define JTFRAME_CRT_ADJUST_HPOS 1
++`endif
++`ifndef JTFRAME_CRT_ADJUST_INC
++    `define JTFRAME_CRT_ADJUST_INC 7
++`endif
++`ifndef JTFRAME_CRT_ADJUST_BASE
++    `define JTFRAME_CRT_ADJUST_BASE 48
++`endif
++wire [7:0] av_r, av_g, av_b;
++wire       av_cen, av_hs, av_vs, av_de;
++
++jtframe_crt_adjust #(
++    .HTOTAL     ( `JTFRAME_CRT_ADJUST_HTOTAL ),
++    .VTOTAL     ( `JTFRAME_CRT_ADJUST_VTOTAL ),
++    .HPOS_MODE  ( `JTFRAME_CRT_ADJUST_HPOS   ),
++    .RD_INC     ( `JTFRAME_CRT_ADJUST_INC    ),
++    .RD_BASE    ( `JTFRAME_CRT_ADJUST_BASE   )
++) u_crt_adjust(
++    .clk        ( scan2x_clk            ),
++    .enable     ( status_full[101]      ),
++    .st_hsize   ( status_full[100:96]   ),
++    .st_hpos    ( status_full[84:79]    ),
++    .st_vshift  ( status_full[78:74]    ),
++    .scandoubler( force_scan2x          ),
++    .ce_in      ( av_cen                ),
++    .r_in       ( av_r                  ),
++    .g_in       ( av_g                  ),
++    .b_in       ( av_b                  ),
++    .hs_in      ( av_hs                 ),
++    .vs_in      ( av_vs                 ),
++    .de_in      ( av_de                 ),
++    .ce_out     ( scan2x_cen            ),
++    .r_out      ( scan2x_r              ),
++    .g_out      ( scan2x_g              ),
++    .b_out      ( scan2x_b              ),
++    .hs_out     ( scan2x_hs             ),
++    .vs_out     ( scan2x_vs             ),
++    .de_out     ( raw_de                )
++);
++`endif
++
+ `ifdef JTFRAME_CRT480I
+ // jtframe_crt_480i (GPL-2.0-or-later, Chris Watson) re-times the game's own video into 15 kHz 480i for
+ // the analog output when the MRA sets mod bit 18. It takes the same video as arcade_video,
