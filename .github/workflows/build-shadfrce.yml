@@ -42,7 +42,8 @@ jobs:
           git remote add origin "$JTCORES_REPO"
           git fetch --depth 1 origin "$JTCORES_SHA"
           git checkout --quiet FETCH_HEAD
-          git submodule update --init --recursive --depth 1 --jobs 8
+          # only the modules Shadow Force uses (some jtcores submodules are private)
+          git submodule update --init --depth 1 modules/fx68k modules/jt51 modules/jt6295
 
       - name: Add the core and apply the CRT Adjust patch
         run: |
