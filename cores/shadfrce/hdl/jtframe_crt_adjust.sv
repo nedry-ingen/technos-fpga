@@ -31,6 +31,18 @@
 
     * H-Position is entered in 2-pixel steps (OSD string length limit).
 
+    * H-Size auto-centring. crt_adjust scales the line from the HSync, so a
+      negative H-Size pulled the left edge of the picture back into the porch
+      and HSync retrace (the CRT folds it over, the picture looks split) and
+      a positive one pushed the right edge off the line. The scaled picture
+      is now kept centred on the native active area: with c the native
+      active centre (pixels from HSync) and P = RD_BASE+hsize, the content is
+      shifted by c*(RD_BASE-P)/P = -c*hsize/P read pixels, computed by a small
+      serial divider and added to H-Position.
+
+    * DE (and therefore the analog RGB, which sys_top gates with DE) rises at
+      whichever comes first, the native active start or the scaled picture.
+
     * Frame position. Shadow Force has a 64-pixel back porch and a 32-pixel
       front porch, so on a CRT the whole picture sits to the right. st_frame
       delays the native HSync by up to 48 pixels (or advances it by up to 12)
@@ -112,7 +124,7 @@ end
 
 // ─── Line timing measured on the native stream ──────────────────────────────
 reg        hs_l = 0, de_l = 0, had_de = 0, vb_cur = 1;
-reg  [9:0] hcnt = 0, de_start = 0;
+reg  [9:0] hcnt = 0, de_start = 0, de_end = 0;
 reg  [VTOTAL-1:0] vbsr = 0;
 wire       hs_rise = ce_in & hs_in & ~hs_l;
 wire       vb_next = vbsr[VTOTAL-2]; // VBlank of the next line (previous frame)
@@ -123,6 +135,7 @@ always @(posedge clk) begin
         de_l <= de_in;
         hcnt <= hs_rise ? 10'd0 : hcnt + 10'd1;
         if( de_in & ~de_l ) de_start <= hcnt;
+        if( ~de_in & de_l ) de_end   <= hcnt;
         if( de_in ) had_de <= 1;
     end
     if( hs_rise ) begin
@@ -131,6 +144,54 @@ always @(posedge clk) begin
         vbsr   <= { vbsr[VTOTAL-2:0], ~had_de };
     end
 end
+
+// ─── H-Size auto-centring: hcentre = -c*hsize/(RD_BASE+hsize) ────────────────
+wire [10:0]       csum   = {1'b0, de_start} + {1'b0, de_end};
+wire [9:0]        ctr    = csum[10:1];         // native active centre
+wire [4:0]        habs   = hsize_s[4] ? 5'd0 - hsize_s : hsize_s;
+reg  [15:0]       dv_num = 0;
+reg  [15:0]       dv_q   = 0;
+reg  [7:0]        dv_den = 1, dv_rem = 0;
+reg  [3:0]        dv_i   = 0;
+reg               dv_busy = 0, dv_neg = 0;
+reg  signed [8:0] hcentre = 0;
+wire [8:0]        dv_try = { dv_rem, dv_num[dv_i] };
+
+always @(posedge clk) begin
+    if( !dv_busy ) begin
+        dv_num  <= {1'b0, ctr} * {11'd0, habs} + {9'd0, rd_period[7:1]}; // rounded
+        dv_den  <= rd_period;
+        dv_neg  <= hsize_s[4];
+        dv_rem  <= 0;
+        dv_q    <= 0;
+        dv_i    <= 4'd15;
+        dv_busy <= 1;
+    end else begin
+        if( dv_try >= {1'b0, dv_den} ) begin
+            dv_rem      <= 8'(dv_try - {1'b0, dv_den});
+            dv_q[dv_i]  <= 1;
+        end else begin
+            dv_rem      <= dv_try[7:0];
+        end
+        if( dv_i==0 ) dv_busy <= 0;
+        dv_i <= dv_i - 4'd1;
+    end
+end
+
+// result of the finished division (dv_q is complete once dv_busy drops)
+reg dv_busy_l = 0;
+always @(posedge clk) begin
+    dv_busy_l <= dv_busy;
+    if( dv_busy_l && !dv_busy ) begin
+        // shrink -> move right, enlarge -> move left. Clamped so that
+        // H-Position (+/-48) plus this still fits crt_adjust's 9-bit hoffset
+        if( dv_q > 16'd200 ) hcentre <= dv_neg ? 9'sd200 : -9'sd200;
+        else                 hcentre <= dv_neg ? $signed({1'b0, dv_q[7:0]}) : -$signed({1'b0, dv_q[7:0]});
+    end
+end
+
+reg signed [8:0] hoff_tot = 0;
+always @(posedge clk) hoff_tot <= hpos_off + hcentre;
 
 // ─── CRT Adjust ─────────────────────────────────────────────────────────────
 wire [7:0] str_r, str_g, str_b;
@@ -146,7 +207,7 @@ crt_adjust #(
     .pxl2_cen   ( rd_ce     ),
     .active     ( crt_on    ),
     .hsize      ( hsize_s   ),
-    .hoffset    ( hpos_off  ),
+    .hoffset    ( hoff_tot  ),
     .voffset    ( vshift_s  ),
     .r_in       ( r_in      ),
     .g_in       ( g_in      ),
@@ -168,12 +229,17 @@ crt_adjust #(
 // ─── OSD stays put: DE rise anchored to the native active start ─────────────
 // The module outputs during this line the picture line whose VBlank is vb_cur
 wire native_rise = ce_in && !hs_rise && hcnt == de_start && !vb_cur;
-reg  str_active_d = 0, de_osd = 0;
-wire str_fall = str_active_d & str_hb;
+reg  str_active_d = 0, de_osd = 0, str_ended = 0;
+wire str_fall = str_active_d &  str_hb;
+wire str_rise = ~str_active_d & ~str_hb;
 
 always @(posedge clk) begin
     if( rd_ce ) str_active_d <= ~str_hb;
-    if     ( native_rise       ) de_osd <= 1;
+    if     ( hs_ref_rise       ) str_ended <= 0;
+    else if( rd_ce && str_fall ) str_ended <= 1;
+    // DE starts at the native active start or at the scaled picture,
+    // whichever comes first, and ends with the scaled picture
+    if     ( (native_rise && !str_ended) || (rd_ce && str_rise) ) de_osd <= 1;
     else if( rd_ce && str_fall ) de_osd <= 0;
 end
 
